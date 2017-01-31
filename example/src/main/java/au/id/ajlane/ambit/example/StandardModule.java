@@ -9,7 +9,7 @@ import au.id.ajlane.ambit.Module;
  * A module which configures the application with the standard configuration.
  */
 @Module(Application.class)
-abstract class StandardModule
+class StandardModule
 {
     /**
      * The application's main thread pool.

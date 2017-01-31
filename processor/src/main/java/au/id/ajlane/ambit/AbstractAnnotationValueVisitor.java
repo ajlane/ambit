@@ -19,7 +19,7 @@ import javax.lang.model.util.AbstractAnnotationValueVisitor8;
  * @param <P>
  *     The type of the parameter given to the visitor.
  */
-public class AbstractAnnotationValueVisitor<R, P> extends AbstractAnnotationValueVisitor8<R, P>
+public abstract class AbstractAnnotationValueVisitor<R, P> extends AbstractAnnotationValueVisitor8<R, P>
 {
     @Override
     public R visitAnnotation(final AnnotationMirror a, final P p)

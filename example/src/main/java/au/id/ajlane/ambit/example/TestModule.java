@@ -11,7 +11,7 @@ import au.id.ajlane.ambit.Module;
  */
 @Module(Application.class)
 @InheritModule(StandardModule.class)
-abstract class TestModule
+class TestModule
 {
     /**
      * The application's main thread pool.
