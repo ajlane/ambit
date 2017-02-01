@@ -7,7 +7,7 @@ public class ApplicationTest
     @Test
     public void test()
     {
-        try (Application application = new TestApplication())
+        try (TestApplication application = new TestApplication())
         {
             application.run();
         }

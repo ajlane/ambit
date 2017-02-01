@@ -25,6 +25,17 @@ class StandardModule
     }
 
     /**
+     * Closes all of the resources provided by the application.
+     *
+     * @param threadPool
+     *     The application's main thread pool.
+     */
+    public void close(ExecutorService threadPool)
+    {
+        threadPool.shutdownNow();
+    }
+
+    /**
      * The message to be printed.
      *
      * @return A string.

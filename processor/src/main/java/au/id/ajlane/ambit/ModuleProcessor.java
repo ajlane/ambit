@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.RoundEnvironment;
 import javax.annotation.processing.SupportedAnnotationTypes;
@@ -22,6 +21,7 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
+import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.ExecutableType;
@@ -59,7 +59,8 @@ public class ModuleProcessor extends AbstractProcessor
                 .parallelStream()
                 .map(moduleElement ->
                 {
-                    JCodeModel codeModel = new JCodeModel();
+                    final DeclaredType moduleType = (DeclaredType) moduleElement.asType();
+                    final JCodeModel codeModel = new JCodeModel();
 
                     moduleElement.getAnnotationMirrors()
                         .stream()
@@ -81,7 +82,7 @@ public class ModuleProcessor extends AbstractProcessor
                                 .map(o -> (AnnotationValue) o)
                                 .forEach(annotationValue ->
                                 {
-                                    final DeclaredType scopeClass =
+                                    final DeclaredType interfaceType =
                                         annotationValue.accept(new AbstractAnnotationValueVisitor<DeclaredType, Void>()
                                         {
                                             @Override
@@ -90,31 +91,31 @@ public class ModuleProcessor extends AbstractProcessor
                                                 return (DeclaredType) t;
                                             }
                                         }, null);
-                                    final String packageName = scopeClass.asElement()
+                                    final Element interfaceElement = interfaceType.asElement();
+                                    final PackageElement interfacePackage = processingEnv.getElementUtils()
+                                        .getPackageOf(interfaceElement);
+                                    final String implSimpleName = moduleElement.getSimpleName()
                                         .toString()
-                                        .replaceAll("\\." + scopeClass.asElement()
-                                            .getSimpleName()
-                                            .toString() + "$", "");
-                                    final String simpleName = moduleElement.getSimpleName()
-                                        .toString()
-                                        .replaceAll("Module$", "") + scopeClass.asElement()
+                                        .replaceAll("Module$", "")
+                                        .replaceAll("(?=.)" + interfaceElement.getSimpleName() + "$", "")
+                                        + interfaceType.asElement()
                                         .getSimpleName()
                                         .toString();
-                                    final String fullName = packageName + "." + simpleName;
+                                    final String implFullName = interfacePackage + "." + implSimpleName;
 
                                     final JDefinedClass impl;
                                     try
                                     {
                                         impl = codeModel._class(
                                             JMod.PUBLIC,
-                                            fullName,
+                                            implFullName,
                                             ClassType.CLASS
                                         );
                                     }
                                     catch (JClassAlreadyExistsException e)
                                     {
                                         warn(
-                                            "Could not generate " + fullName + " because it already exists.",
+                                            "Could not generate " + implFullName + " because it already exists.",
                                             moduleElement,
                                             moduleAnnotation,
                                             annotationValue
@@ -122,13 +123,56 @@ public class ModuleProcessor extends AbstractProcessor
                                         return;
                                     }
 
-                                    impl._implements(codeModel.ref(scopeClass.toString()));
+                                    impl._implements(codeModel.ref(interfaceType.toString()));
+                                    impl._implements(codeModel.ref(AutoCloseable.class));
 
                                     final JFieldVar moduleField = impl.field(
                                         JMod.PRIVATE | JMod.FINAL,
                                         codeModel.ref(moduleElement.toString()),
                                         "module"
                                     );
+
+                                    final JMethod implCloseMethod = impl.method(JMod.PUBLIC, codeModel.VOID, "close");
+                                    final List<? extends ExecutableElement> moduleCloseMethodElements =
+                                        moduleElement.getEnclosedElements()
+                                            .stream()
+                                            .filter(e -> e.getKind() == ElementKind.METHOD)
+                                            .filter(e -> e.getSimpleName()
+                                                .toString()
+                                                .equals("close"))
+                                            .map(e -> (ExecutableElement) e)
+                                            .collect(Collectors.toList());
+                                    if (moduleCloseMethodElements.isEmpty())
+                                    {
+                                        warn("There are several close methods on " + moduleElement + ".");
+                                        // TODO: Think about crashing instead of just warning
+                                    }
+                                    if (moduleCloseMethodElements.size() > 0)
+                                    {
+                                        final ExecutableElement moduleCloseMethodElement =
+                                            moduleCloseMethodElements.get(0);
+                                        moduleCloseMethodElement.getThrownTypes()
+                                            .forEach(moduleCloseMethodExceptionType ->
+                                                implCloseMethod._throws(codeModel.ref(moduleCloseMethodExceptionType
+                                                    .toString())));
+                                        final JInvocation implModuleCloseMethodCall = JExpr._this()
+                                            .ref(moduleField)
+                                            .invoke(moduleCloseMethodElement.getSimpleName()
+                                                .toString());
+                                        for (int i = 0;
+                                             i < moduleCloseMethodElement.getParameters()
+                                                 .size();
+                                             i++)
+                                        {
+                                            implModuleCloseMethodCall.arg(JExpr._this()
+                                                .ref(moduleCloseMethodElement.getParameters()
+                                                    .get(i)
+                                                    .getSimpleName()
+                                                    .toString()));
+                                        }
+                                        implCloseMethod.body()
+                                            .add(implModuleCloseMethodCall);
+                                    }
 
                                     final JMethod implConstructor = impl.constructor(JMod.PUBLIC);
                                     final JInvocation invokeModuleConstructor =
@@ -139,31 +183,34 @@ public class ModuleProcessor extends AbstractProcessor
                                                 .ref(moduleField),
                                             invokeModuleConstructor
                                         );
-                                    final List<ExecutableElement> constructors = moduleElement.getEnclosedElements()
-                                        .stream()
-                                        .filter(e -> e.getKind() == ElementKind.CONSTRUCTOR)
-                                        .map(c -> (ExecutableElement) c)
-                                        .collect(Collectors.toList());
-                                    if (constructors.size() > 1)
+                                    final List<ExecutableElement> moduleConstructorElements =
+                                        moduleElement.getEnclosedElements()
+                                            .stream()
+                                            .filter(e -> e.getKind() == ElementKind.CONSTRUCTOR)
+                                            .map(c -> (ExecutableElement) c)
+                                            .collect(Collectors.toList());
+                                    if (moduleConstructorElements.size() > 1)
                                     {
                                         warn("There are several constructors on " + moduleElement + ".");
                                         // TODO: Think about crashing instead of just warning.
                                     }
-                                    if (constructors.size() > 0)
+                                    if (moduleConstructorElements.size() > 0)
                                     {
-                                        ExecutableElement constructor = constructors.get(0);
-                                        ExecutableType constructorType = (ExecutableType) constructor.asType();
+                                        final ExecutableElement moduleConstructorElement =
+                                            moduleConstructorElements.get(0);
+                                        final ExecutableType moduleConstructorType =
+                                            (ExecutableType) moduleConstructorElement.asType();
                                         for (int i = 0;
-                                             i < constructor.getParameters()
+                                             i < moduleConstructorElement.getParameters()
                                                  .size();
                                              i++)
                                         {
                                             invokeModuleConstructor.arg(implConstructor.param(
                                                 JMod.FINAL,
-                                                codeModel.ref(constructorType.getParameterTypes()
+                                                codeModel.ref(moduleConstructorType.getParameterTypes()
                                                     .get(i)
                                                     .toString()),
-                                                constructor.getParameters()
+                                                moduleConstructorElement.getParameters()
                                                     .get(i)
                                                     .getSimpleName()
                                                     .toString()
@@ -171,60 +218,64 @@ public class ModuleProcessor extends AbstractProcessor
                                         }
                                     }
 
-                                    for (Element element : scopeClass.asElement()
+                                    for (Element interfaceMemberElement : interfaceType.asElement()
                                         .getEnclosedElements())
                                     {
-                                        switch (element.getKind())
+                                        switch (interfaceMemberElement.getKind())
                                         {
                                             case METHOD:
-                                                ExecutableElement methodElement = (ExecutableElement) element;
-                                                Set<Modifier> methodModifiers = methodElement.getModifiers();
-                                                boolean isStatic = methodModifiers.contains(Modifier.STATIC);
-                                                boolean hasDefault = methodModifiers.contains(Modifier.DEFAULT);
+                                                ExecutableElement interfaceMethodElement =
+                                                    (ExecutableElement) interfaceMemberElement;
+                                                Set<Modifier> interfaceMethodModifiers =
+                                                    interfaceMethodElement.getModifiers();
+                                                boolean isStatic = interfaceMethodModifiers.contains(Modifier.STATIC);
+                                                boolean hasDefault =
+                                                    interfaceMethodModifiers.contains(Modifier.DEFAULT);
                                                 if (isStatic)
                                                 {
                                                     continue;
                                                 }
-                                                methodElement.getReturnType()
+                                                interfaceMethodElement.getReturnType()
                                                     .accept(new AbstractTypeVisitor<JMethod, JDefinedClass>()
                                                     {
                                                         @Override
                                                         public JMethod visitDeclared(
-                                                            final DeclaredType t,
+                                                            final DeclaredType interfaceMethodReturnType,
                                                             final JDefinedClass impl
                                                         )
                                                         {
-                                                            final JFieldVar field = impl.field(
+                                                            final JFieldVar implGetterField = impl.field(
                                                                 JMod.PRIVATE | JMod.FINAL,
                                                                 codeModel.ref(
-                                                                    t.asElement()
+                                                                    interfaceMethodReturnType.asElement()
                                                                         .toString()),
-                                                                element.getSimpleName()
+                                                                interfaceMemberElement.getSimpleName()
                                                                     .toString()
                                                             );
 
                                                             implConstructor.body()
                                                                 .assign(
                                                                     JExpr._this()
-                                                                        .ref(field),
+                                                                        .ref(implGetterField),
                                                                     JExpr._this()
                                                                         .ref(moduleField)
-                                                                        .invoke(element.getSimpleName()
+                                                                        .invoke(interfaceMemberElement.getSimpleName()
                                                                             .toString())
                                                                 );
 
-                                                            final JMethod method = impl.method(
+                                                            final JMethod implGetterMethod = impl.method(
                                                                 JMod.PUBLIC,
                                                                 codeModel.ref(
-                                                                    t.asElement()
+                                                                    interfaceMethodReturnType.asElement()
                                                                         .toString()),
-                                                                element.getSimpleName()
+                                                                interfaceMemberElement.getSimpleName()
                                                                     .toString()
                                                             );
-                                                            method.body()
+                                                            implGetterMethod.body()
                                                                 ._return(JExpr._this()
-                                                                    .ref(field));
-                                                            return method;
+                                                                    .ref(implGetterField));
+
+                                                            return implGetterMethod;
                                                         }
 
                                                         @Override
@@ -236,17 +287,18 @@ public class ModuleProcessor extends AbstractProcessor
                                                             if (!hasDefault)
                                                             {
                                                                 warn(
-                                                                    fullName + " cannot meaningfully implement "
-                                                                        + methodElement.getSimpleName()
+                                                                    implFullName + " cannot meaningfully implement "
+                                                                        + interfaceMethodElement.getSimpleName()
                                                                         + " because it does not return a value.",
-                                                                    methodElement
+                                                                    interfaceMethodElement
                                                                 );
-                                                                return impl.method(
+                                                                final JMethod implEmptyMethod = impl.method(
                                                                     JMod.PUBLIC,
                                                                     codeModel.VOID,
-                                                                    element.getSimpleName()
+                                                                    interfaceMemberElement.getSimpleName()
                                                                         .toString()
                                                                 );
+                                                                return implEmptyMethod;
                                                             }
                                                             return null;
                                                         }
@@ -268,10 +320,14 @@ public class ModuleProcessor extends AbstractProcessor
                             }
 
                             @Override
-                            public OutputStream openBinary(final JPackage jPackage, final String s) throws IOException
+                            public OutputStream openBinary(final JPackage jPackage, final String fileName)
+                                throws IOException
                             {
                                 return processingEnv.getFiler()
-                                    .createSourceFile(jPackage.name() + "." + s.replaceAll(".java", ""), moduleElement)
+                                    .createSourceFile(
+                                        jPackage.name() + "." + fileName.replaceAll(".java", ""),
+                                        moduleElement
+                                    )
                                     .openOutputStream();
                             }
                         });

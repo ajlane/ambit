@@ -24,19 +24,19 @@ public interface Application extends AutoCloseable
         }
     }
 
-    @Override
-    default void close()
-    {
-        threadPool().shutdownNow();
-        System.out.println("Done.");
-    }
-
     /**
      * The message that the application should print.
      *
      * @return A string.
      */
     String message();
+
+    /**
+     * The application's main thread pool.
+     *
+     * @return A ready executor service.
+     */
+    ExecutorService threadPool();
 
     /**
      * Runs the application.
@@ -46,11 +46,4 @@ public interface Application extends AutoCloseable
         threadPool()
             .submit(() -> System.out.println(message()));
     }
-
-    /**
-     * The application's main thread pool.
-     *
-     * @return A ready executor service.
-     */
-    ExecutorService threadPool();
 }
