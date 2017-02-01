@@ -5,7 +5,7 @@ import java.util.concurrent.ExecutorService;
 /**
  * An application.
  */
-public interface Application
+public interface Application extends AutoCloseable
 {
     /**
      * An entry point to the application.
@@ -18,7 +18,33 @@ public interface Application
      */
     static void main(final String... args) throws Exception
     {
-        Application application = new StandardApplication();
+        try (Application application = new StandardApplication())
+        {
+            application.run();
+        }
+    }
+
+    @Override
+    default void close()
+    {
+        threadPool().shutdownNow();
+        System.out.println("Done.");
+    }
+
+    /**
+     * The message that the application should print.
+     *
+     * @return A string.
+     */
+    String message();
+
+    /**
+     * Runs the application.
+     */
+    default void run()
+    {
+        threadPool()
+            .submit(() -> System.out.println(message()));
     }
 
     /**

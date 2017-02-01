@@ -14,11 +14,21 @@ import au.id.ajlane.ambit.Module;
 class TestModule
 {
     /**
+     * The message to be printed.
+     *
+     * @return A string.
+     */
+    public String message()
+    {
+        return "This is a test.";
+    }
+
+    /**
      * The application's main thread pool.
      *
      * @return A ready executor service.
      */
-    ExecutorService threadPool()
+    public ExecutorService threadPool()
     {
         return Executors.newSingleThreadExecutor();
     }

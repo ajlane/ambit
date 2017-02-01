@@ -8,6 +8,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
+
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.RoundEnvironment;
 import javax.annotation.processing.SupportedAnnotationTypes;
@@ -149,6 +150,19 @@ public class ModuleProcessor extends AbstractProcessor
                                                             final JDefinedClass impl
                                                         )
                                                         {
+                                                            final JFieldVar field = impl.field(
+                                                                JMod.PRIVATE | JMod.FINAL,
+                                                                codeModel.ref(
+                                                                    t.asElement()
+                                                                        .toString()),
+                                                                element.getSimpleName()
+                                                                    .toString(),
+                                                                JExpr._this()
+                                                                    .ref(moduleField)
+                                                                    .invoke(element.getSimpleName()
+                                                                        .toString())
+                                                            );
+
                                                             final JMethod method = impl.method(
                                                                 JMod.PUBLIC,
                                                                 codeModel.ref(
@@ -158,7 +172,8 @@ public class ModuleProcessor extends AbstractProcessor
                                                                     .toString()
                                                             );
                                                             method.body()
-                                                                ._return(JExpr._null());
+                                                                ._return(JExpr._this()
+                                                                    .ref(field));
                                                             return method;
                                                         }
 
@@ -171,9 +186,9 @@ public class ModuleProcessor extends AbstractProcessor
                                                             if (!hasDefault)
                                                             {
                                                                 warn(
-                                                                    fullName + " cannot meaningfully implement " +
-                                                                        methodElement.getSimpleName() +
-                                                                        " because it does not return a value.",
+                                                                    fullName + " cannot meaningfully implement "
+                                                                        + methodElement.getSimpleName()
+                                                                        + " because it does not return a value.",
                                                                     methodElement
                                                                 );
                                                                 return impl.method(

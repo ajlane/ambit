@@ -12,11 +12,21 @@ import au.id.ajlane.ambit.Module;
 class StandardModule
 {
     /**
+     * The message to be printed.
+     *
+     * @return A string.
+     */
+    public String message()
+    {
+        return "Hello World";
+    }
+
+    /**
      * The application's main thread pool.
      *
      * @return A ready executor service.
      */
-    ExecutorService threadPool()
+    public ExecutorService threadPool()
     {
         return Executors.newCachedThreadPool();
     }
