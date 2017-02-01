@@ -11,6 +11,19 @@ import au.id.ajlane.ambit.Module;
 @Module(Application.class)
 class StandardModule
 {
+    private final String name;
+
+    /**
+     * Initialises the module.
+     *
+     * @param name
+     *     The name that the application should use. Must not be null or empty.
+     */
+    public StandardModule(String name)
+    {
+        this.name = name;
+    }
+
     /**
      * The message to be printed.
      *
@@ -18,7 +31,7 @@ class StandardModule
      */
     public String message()
     {
-        return "Hello World";
+        return "Hello " + name;
     }
 
     /**

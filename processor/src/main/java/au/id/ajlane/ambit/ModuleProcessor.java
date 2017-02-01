@@ -7,6 +7,7 @@ import java.io.PrintWriter;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.annotation.processing.AbstractProcessor;
@@ -18,10 +19,12 @@ import javax.lang.model.SourceVersion;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.NoType;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
@@ -33,6 +36,7 @@ import com.sun.codemodel.JCodeModel;
 import com.sun.codemodel.JDefinedClass;
 import com.sun.codemodel.JExpr;
 import com.sun.codemodel.JFieldVar;
+import com.sun.codemodel.JInvocation;
 import com.sun.codemodel.JMethod;
 import com.sun.codemodel.JMod;
 import com.sun.codemodel.JPackage;
@@ -123,9 +127,49 @@ public class ModuleProcessor extends AbstractProcessor
                                     final JFieldVar moduleField = impl.field(
                                         JMod.PRIVATE | JMod.FINAL,
                                         codeModel.ref(moduleElement.toString()),
-                                        "module",
-                                        JExpr._new(codeModel.ref(moduleElement.toString()))
+                                        "module"
                                     );
+
+                                    final JMethod implConstructor = impl.constructor(JMod.PUBLIC);
+                                    final JInvocation invokeModuleConstructor =
+                                        JExpr._new(codeModel.ref(moduleElement.toString()));
+                                    implConstructor.body()
+                                        .assign(
+                                            JExpr._this()
+                                                .ref(moduleField),
+                                            invokeModuleConstructor
+                                        );
+                                    final List<ExecutableElement> constructors = moduleElement.getEnclosedElements()
+                                        .stream()
+                                        .filter(e -> e.getKind() == ElementKind.CONSTRUCTOR)
+                                        .map(c -> (ExecutableElement) c)
+                                        .collect(Collectors.toList());
+                                    if (constructors.size() > 1)
+                                    {
+                                        warn("There are several constructors on " + moduleElement + ".");
+                                        // TODO: Think about crashing instead of just warning.
+                                    }
+                                    if (constructors.size() > 0)
+                                    {
+                                        ExecutableElement constructor = constructors.get(0);
+                                        ExecutableType constructorType = (ExecutableType) constructor.asType();
+                                        for (int i = 0;
+                                             i < constructor.getParameters()
+                                                 .size();
+                                             i++)
+                                        {
+                                            invokeModuleConstructor.arg(implConstructor.param(
+                                                JMod.FINAL,
+                                                codeModel.ref(constructorType.getParameterTypes()
+                                                    .get(i)
+                                                    .toString()),
+                                                constructor.getParameters()
+                                                    .get(i)
+                                                    .getSimpleName()
+                                                    .toString()
+                                            ));
+                                        }
+                                    }
 
                                     for (Element element : scopeClass.asElement()
                                         .getEnclosedElements())
@@ -156,12 +200,18 @@ public class ModuleProcessor extends AbstractProcessor
                                                                     t.asElement()
                                                                         .toString()),
                                                                 element.getSimpleName()
-                                                                    .toString(),
-                                                                JExpr._this()
-                                                                    .ref(moduleField)
-                                                                    .invoke(element.getSimpleName()
-                                                                        .toString())
+                                                                    .toString()
                                                             );
+
+                                                            implConstructor.body()
+                                                                .assign(
+                                                                    JExpr._this()
+                                                                        .ref(field),
+                                                                    JExpr._this()
+                                                                        .ref(moduleField)
+                                                                        .invoke(element.getSimpleName()
+                                                                            .toString())
+                                                                );
 
                                                             final JMethod method = impl.method(
                                                                 JMod.PUBLIC,

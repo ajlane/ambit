@@ -18,7 +18,7 @@ public interface Application extends AutoCloseable
      */
     static void main(final String... args) throws Exception
     {
-        try (Application application = new StandardApplication())
+        try (Application application = new StandardApplication(args.length > 0 ? args[0] : "World"))
         {
             application.run();
         }
